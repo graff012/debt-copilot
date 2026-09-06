@@ -52,3 +52,17 @@ export function diffDays(fromDay: string, toDay: string): number {
   const ms = Date.parse(`${toDay}T00:00:00Z`) - Date.parse(`${fromDay}T00:00:00Z`);
   return Math.round(ms / 86_400_000);
 }
+
+const DAY_MS = 86_400_000;
+
+/** Shift a YYYY-MM-DD calendar day by n days (n may be negative). */
+export function addDays(day: string, n: number): string {
+  assertDayString(day, 'day');
+  if (!Number.isInteger(n)) throw new RangeError('n must be an integer');
+  const dt = new Date(Date.parse(`${day}T00:00:00Z`) + n * DAY_MS);
+  if (Number.isNaN(dt.getTime())) throw new RangeError('date shift out of range');
+  const y = dt.getUTCFullYear();
+  const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(dt.getUTCDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
