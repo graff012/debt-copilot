@@ -1,16 +1,17 @@
-export type { Currency, Money, OrgContext, PromiseStatus, PromiseToPay, Receivable } from './types.js';
-export { addDays, assertDayString, diffDays, getOrgToday } from './time.js';
+export type { Currency, Money, OrgContext, PromiseStatus, PromiseToPay, Receivable } from './types';
+export { addDays, assertDayString, diffDays, getOrgToday } from './time';
 export {
   assertMoney,
   assertCurrencyCode,
   bucketFor,
   calculateAging,
   calculateAgingForOrg,
+  countAging,
   isOverdue,
   type AgingBucket,
   type AgingSchedule,
-} from './aging.js';
-export { assertPromiseStatus, isPromiseBroken } from './promises.js';
+} from './aging';
+export { assertPromiseStatus, isPromiseBroken } from './promises';
 export {
   FALLBACK_NET_DAYS,
   applyDuplicateBlocks,
@@ -24,5 +25,5 @@ export {
   type RowIssue,
   type ValidatedRow,
   type Verdict,
-} from './importing.js';
-export { amountTierFor, calculatePriority, type PriorityInput } from './priority.js';
+} from './importing';
+export { amountTierFor, calculatePriority, type PriorityInput } from './priority';

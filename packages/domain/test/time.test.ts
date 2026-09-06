@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addDays, diffDays, getOrgToday } from '../src/time.js';
+import { addDays, diffDays, getOrgToday } from '../src/time';
 
 const TASHKENT = 'Asia/Tashkent';
 

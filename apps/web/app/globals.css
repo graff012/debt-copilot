@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+/* Light-only product theme (matches the approved mockups). */
+:root {
+  --background: #f1f5f9;
+  --foreground: #0f172a;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}

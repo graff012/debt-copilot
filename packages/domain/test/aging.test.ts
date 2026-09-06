@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { bucketFor, calculateAging, calculateAgingForOrg, isOverdue } from '../src/aging.js';
-import type { Receivable } from '../src/types.js';
+import { bucketFor, calculateAging, calculateAgingForOrg, countAging, isOverdue } from '../src/aging';
+import type { Receivable } from '../src/types';
 
 const uzs = (minor: bigint) => ({ minor, currency: 'UZS' });
 const usd = (minor: bigint) => ({ minor, currency: 'USD' });
@@ -213,7 +213,85 @@ describe('calculateAgingForOrg', () => {
       }),
     ).toThrow(RangeError);
   });
+});
 
+describe('countAging', () => {
+  it('counts rows per bucket with the same guards as totals', () => {
+    const counts = countAging(
+      [
+        rec({ id: 'a', dueDate: '2026-09-06' }),
+        rec({ id: 'b', dueDate: '2026-09-05' }),
+        rec({ id: 'c', dueDate: '2026-09-05' }),
+      ],
+      '2026-09-06',
+      'o1',
+    );
+    expect(counts['UZS']).toEqual({
+      current: 1,
+      d1_7: 2,
+      d8_30: 0,
+      d31_60: 0,
+      d61_90: 0,
+      d90p: 0,
+    });
+  });
+
+  it('rejects cross-org rows and duplicates like calculateAging', () => {
+    expect(() =>
+      countAging([rec({ organizationId: 'o2' })], '2026-09-06', 'o1'),
+    ).toThrow(RangeError);
+    expect(() =>
+      countAging([rec({ id: 'a' }), rec({ id: 'a' })], '2026-09-06', 'o1'),
+    ).toThrow(RangeError);
+  });
+});
+
+describe('countAging adversarial (missing-edge cover)', () => {
+  it('returns {} for empty input', () => {
+    expect(countAging([], '2026-09-06', 'o1')).toEqual({});
+  });
+
+  it('counts per currency lane without mixing', () => {
+    const counts = countAging(
+      [
+        rec({ id: 'u1', dueDate: '2026-09-06', remaining: uzs(1_000_00n) }), // UZS current
+        rec({ id: 'u2', dueDate: '2026-09-05', remaining: uzs(2_000_00n) }), // UZS d1_7
+        rec({
+          id: 'd1',
+          dueDate: '2026-09-06',
+          original: usd(500_00n),
+          remaining: usd(500_00n),
+        }), // USD current
+        rec({
+          id: 'd2',
+          dueDate: '2026-08-20',
+          original: usd(1_000_00n),
+          remaining: usd(1_000_00n),
+        }), // USD d8_30 (17d)
+      ],
+      '2026-09-06',
+      'o1',
+    );
+    expect(counts['UZS']).toEqual({
+      current: 1,
+      d1_7: 1,
+      d8_30: 0,
+      d31_60: 0,
+      d61_90: 0,
+      d90p: 0,
+    });
+    expect(counts['USD']).toEqual({
+      current: 1,
+      d1_7: 0,
+      d8_30: 1,
+      d31_60: 0,
+      d61_90: 0,
+      d90p: 0,
+    });
+  });
+});
+
+describe('calculateAgingForOrg timezones', () => {
   it('proves org-dependence: same instant is overdue in Tashkent but current in UTC', () => {
     // 19:30Z Sep 6 = 00:30 Sep 7 in Tashkent (due Sep 6 → 1d overdue) but still Sep 6 in UTC (due today → current).
     const now = new Date('2026-09-06T19:30:00Z');

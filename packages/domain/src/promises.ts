@@ -1,6 +1,6 @@
-import { assertMoney } from './aging.js';
-import { assertDayString } from './time.js';
-import type { PromiseStatus, PromiseToPay } from './types.js';
+import { assertMoney } from './aging';
+import { assertDayString } from './time';
+import type { PromiseStatus, PromiseToPay } from './types';
 
 const STATUSES: ReadonlySet<string> = new Set(['OPEN', 'KEPT', 'BROKEN', 'CANCELLED']);
 

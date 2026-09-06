@@ -1,5 +1,5 @@
-import { addDays, assertDayString } from './time.js';
-import { assertCurrencyCode } from './aging.js';
+import { addDays, assertDayString } from './time';
+import { assertCurrencyCode } from './aging';
 
 /**
  * Deterministic Excel-import row validation (task 2).

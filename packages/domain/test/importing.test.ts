@@ -7,7 +7,7 @@ import {
   summarizeImport,
   validateImportRow,
   type ImportRowInput,
-} from '../src/importing.js';
+} from '../src/importing';
 
 const row = (over: Partial<ImportRowInput> = {}): ImportRowInput => ({
   rowNumber: 1,

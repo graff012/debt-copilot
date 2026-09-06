@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { isPromiseBroken } from '../src/promises.js';
-import type { PromiseToPay } from '../src/types.js';
+import { isPromiseBroken } from '../src/promises';
+import type { PromiseToPay } from '../src/types';
 
 const promise = (over: Partial<PromiseToPay> = {}): PromiseToPay => ({
   id: 'p1',
