@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { diffDays, getOrgToday } from '../src/time.js';
+import { addDays, diffDays, getOrgToday } from '../src/time.js';
 
 const TASHKENT = 'Asia/Tashkent';
 
@@ -23,6 +23,26 @@ describe('getOrgToday', () => {
     expect(() => getOrgToday({ ...ok, timeZone: '' })).toThrow(RangeError);
     expect(() => getOrgToday({ ...ok, timeZone: 'Mars/Olympus' })).toThrow(RangeError);
     expect(() => getOrgToday({ ...ok, now: new Date(NaN) })).toThrow(RangeError);
+  });
+});
+
+describe('addDays', () => {
+  it('shifts across month and leap boundaries', () => {
+    expect(addDays('2026-01-20', 15)).toBe('2026-02-04');
+    expect(addDays('2024-02-15', 15)).toBe('2024-03-01'); // leap year
+    expect(addDays('2026-09-06', -5)).toBe('2026-09-01');
+    expect(addDays('2025-12-31', 1)).toBe('2026-01-01');
+  });
+
+  it('shifts negative across the year boundary', () => {
+    expect(addDays('2026-01-01', -1)).toBe('2025-12-31');
+    expect(addDays('2026-01-05', -10)).toBe('2025-12-26');
+  });
+
+  it('rejects bad input', () => {
+    expect(() => addDays('2026-02-30', 1)).toThrow(RangeError);
+    expect(() => addDays('2026-09-06', 1.5)).toThrow(RangeError);
+    expect(() => addDays('2026-09-06', Number.MAX_SAFE_INTEGER)).toThrow(RangeError);
   });
 });
 

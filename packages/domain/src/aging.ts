@@ -17,13 +17,17 @@ const emptyBuckets = (): Record<AgingBucket, bigint> => ({
 
 const CURRENCY_RE = /^[A-Z]{3}$/;
 
+export function assertCurrencyCode(code: string, field: string): void {
+  // Strict ISO shape so "uzs" and "UZS " never silently split buckets.
+  if (!CURRENCY_RE.test(code)) {
+    throw new RangeError(`${field} must be a 3-letter uppercase code`);
+  }
+}
+
 export function assertMoney(m: Money, field: string): void {
   if (typeof m.minor !== 'bigint') throw new TypeError(`${field}.minor must be bigint`);
   if (m.minor < 0n) throw new RangeError(`${field}.minor must be >= 0`);
-  // Strict ISO shape so "uzs" and "UZS " never silently split buckets.
-  if (!CURRENCY_RE.test(m.currency)) {
-    throw new RangeError(`${field}.currency must be a 3-letter uppercase code`);
-  }
+  assertCurrencyCode(m.currency, `${field}.currency`);
 }
 
 /** Overdue ⇔ remaining > 0 AND dueDate < today. Due today is NOT overdue. */
