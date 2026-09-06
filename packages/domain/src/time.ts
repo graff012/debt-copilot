@@ -1,4 +1,4 @@
-import type { OrgContext } from './types.js';
+import type { OrgContext } from './types';
 
 const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 

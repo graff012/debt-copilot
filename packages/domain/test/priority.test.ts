@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { amountTierFor, calculatePriority } from '../src/priority.js';
+import { amountTierFor, calculatePriority } from '../src/priority';
 
 describe('calculatePriority', () => {
   it('sums overdue + broken×20 + no-contact + tier', () => {

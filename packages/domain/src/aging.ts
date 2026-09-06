@@ -1,5 +1,5 @@
-import { assertDayString, diffDays, getOrgToday } from './time.js';
-import type { Money, OrgContext, Receivable } from './types.js';
+import { assertDayString, diffDays, getOrgToday } from './time';
+import type { Money, OrgContext, Receivable } from './types';
 
 export type AgingBucket = 'current' | 'd1_7' | 'd8_30' | 'd31_60' | 'd61_90' | 'd90p';
 
@@ -98,4 +98,46 @@ export function calculateAgingForOrg(
   ctx: OrgContext,
 ): AgingSchedule {
   return calculateAging(receivables, getOrgToday(ctx), ctx.organizationId);
+}
+
+/** Row counts per bucket/currency. Same guards + bucketing as calculateAging. */
+export function countAging(
+  receivables: readonly Receivable[],
+  today: string,
+  organizationId: string,
+): Record<string, Record<AgingBucket, number>> {
+  assertDayString(today, 'today');
+  if (!organizationId) throw new RangeError('organizationId is required');
+  const out: Record<string, Record<AgingBucket, number>> = {};
+  const seen = new Set<string>();
+  const zero = (): Record<AgingBucket, number> => ({
+    current: 0,
+    d1_7: 0,
+    d8_30: 0,
+    d31_60: 0,
+    d61_90: 0,
+    d90p: 0,
+  });
+  for (const r of receivables) {
+    if (r.organizationId !== organizationId) {
+      throw new RangeError(`Receivable ${r.id} belongs to another org`);
+    }
+    if (seen.has(r.id)) throw new RangeError(`Duplicate receivable id: ${r.id}`);
+    seen.add(r.id);
+    assertDayString(r.dueDate, 'dueDate');
+    assertMoney(r.original, 'original');
+    assertMoney(r.remaining, 'remaining');
+    if (r.original.currency !== r.remaining.currency) {
+      throw new RangeError(`Mixed currencies on receivable ${r.id}`);
+    }
+    const ccy = r.remaining.currency;
+    let row = out[ccy];
+    if (!row) {
+      row = zero();
+      out[ccy] = row;
+    }
+    const bucket = isOverdue(r, today) ? bucketFor(diffDays(r.dueDate, today)) : 'current';
+    row[bucket] += 1;
+  }
+  return out;
 }

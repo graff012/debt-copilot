@@ -1,5 +1,5 @@
-import { assertMoney } from './aging.js';
-import type { Money } from './types.js';
+import { assertMoney } from './aging';
+import type { Money } from './types';
 
 /**
  * V1 heuristic exposure tiers, per currency, compared in minor units.
