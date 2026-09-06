@@ -1,0 +1,21 @@
+{
+  "name": "debt-copilot",
+  "private": true,
+  "packageManager": "pnpm@10.19.0",
+  "scripts": {
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "test:e2e": "turbo run test:e2e",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:e2e",
+    "dev": "turbo run dev",
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "eslint": "^10.10.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.6.0",
+    "typescript-eslint": "^8.69.0",
+    "vitest": "^5.0.0"
+  }
+}
