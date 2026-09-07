@@ -13,6 +13,7 @@ import {
 } from '@debt-copilot/domain';
 import {
   CUSTOMERS,
+  DEMO_NOW,
   DEMO_TODAY,
   NO_CONTACT_DAYS,
   ORG_ID,
@@ -81,9 +82,6 @@ const BUCKET_LABELS: Record<AgingBucket, string> = {
 };
 
 const BUCKET_ORDER: readonly AgingBucket[] = ['current', 'd1_7', 'd8_30', 'd31_60', 'd61_90', 'd90p'];
-
-/** Noon demo clock: safely mid-day in every timezone we demo. */
-const DEMO_NOW = new Date('2026-09-06T07:00:00Z'); // 12:00 Asia/Tashkent
 
 function meta(customerId: string): { name: string; assignee: string } {
   const m = CUSTOMERS[customerId];
