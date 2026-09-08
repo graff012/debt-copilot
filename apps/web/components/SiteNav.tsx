@@ -6,9 +6,10 @@ const ROUTES = [
   { label: 'Dashboard', href: '/' },
   { label: 'Customers', href: '/customers' },
   { label: 'Promises', href: '/promises' },
+  { label: 'Import', href: '/import' },
 ];
 
-const SOON = ['Import', 'Team', 'Settings'];
+const SOON = ['Team', 'Settings'];
 
 function isActive(pathname: string, href: string): boolean {
   return href === '/' ? pathname === '/' : pathname.startsWith(href);
