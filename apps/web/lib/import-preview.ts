@@ -137,19 +137,16 @@ export interface ImportPreview {
   readonly summary: ImportSummary;
 }
 
-export function buildImportPreview(): ImportPreview {
-  // Rows without a stable ref+invoice are unkeyable: they skip duplicate
-  // detection instead of receiving fake keys (fake keys either collide or
-  // bypass the domain's empty-throw guard). They still carry their own verdicts.
+export function previewRows(inputs: readonly ImportRowInput[]): ImportPreview {
   const validated: ValidatedRow[] = [];
   const keyedRows: ValidatedRow[] = [];
   const keyedKeys: string[] = [];
   const keyedPos: number[] = [];
-  BATCH.forEach((b, i) => {
-    const row = validateImportRow({ ...b });
+  inputs.forEach((input, i) => {
+    const row = validateImportRow({ ...input });
     validated.push(row);
-    const ref = (b.tin ?? '').trim() || (b.externalCustomerId ?? '').trim();
-    const inv = (b.invoiceNumber ?? '').trim();
+    const ref = (input.tin ?? '').trim() || (input.externalCustomerId ?? '').trim();
+    const inv = (input.invoiceNumber ?? '').trim();
     if (ref && inv) {
       keyedRows.push(row);
       keyedKeys.push(importKeyFor(ORG_ID, ref, inv));
@@ -164,4 +161,8 @@ export function buildImportPreview(): ImportPreview {
   });
   const rows = validated.map((row, i) => byPos.get(i) ?? row);
   return { rows, summary: summarizeImport(rows) };
+}
+
+export function buildImportPreview(): ImportPreview {
+  return previewRows(BATCH);
 }

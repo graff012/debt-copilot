@@ -54,8 +54,9 @@ export interface ValidatedRow {
 }
 
 const TIN_RE = /^\d{9}$/;
-// Any 3-letter code (row currency decides meaning) + som spellings. "10 UZS extra" still throws.
-const SUFFIX_RE = /\s*([A-Z]{3}|СУМ|СЎМ)$/;
+// Any 3-letter code (row currency decides meaning) + som spellings, any case.
+// "10 UZS extra" still throws: the code must end the cell.
+const SUFFIX_RE = /\s*([A-Z]{3}|СУМ|СЎМ)$/i;
 /** Postgres bigint ceiling: validated amounts must fit the column. */
 const MAX_MINOR = 9_223_372_036_854_775_807n;
 

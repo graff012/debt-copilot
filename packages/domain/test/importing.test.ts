@@ -192,6 +192,11 @@ describe('importing adversarial (missing-edge cover)', () => {
     expect(parseAmountMinor('12 500 000 СЎМ')).toBe(1_250_000_000n);
   });
 
+  it('matches suffixes case-insensitively (real files write сум/usd lowercase)', () => {
+    expect(parseAmountMinor('12 500 000 сум')).toBe(1_250_000_000n);
+    expect(parseAmountMinor('100 usd')).toBe(10_000n);
+  });
+
   it('parses zero with decimals as zero minor', () => {
     expect(parseAmountMinor('0.00')).toBe(0n);
   });
