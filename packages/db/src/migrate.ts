@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { createDb } from './index.js';
+import { createDb } from './index';
 
 config({ path: '../../.env' });
 
