@@ -1,91 +1,35 @@
-import { config } from 'dotenv';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module.js';
-
-config({ path: '../../.env' });
+import { bearer as H, bootApp, signupOrg, teardownOrg, type Creds } from './setup.js';
 
 // ---------------------------------------------------------------------------
-// Missing import e2e (companion to import.e2e.ts). Own scratch orgs per case,
-// full RESTRICT-order cleanup. Same style: X-Organization-Id header, DAY pin.
+// Missing import e2e (companion to import.e2e.ts). Own scratch orgs per case
+// via signup, full RESTRICT-order cleanup. Bearer tokens, DAY pin.
 // Money asserts: bigint minor units, currencies never mixed.
 // ---------------------------------------------------------------------------
 
 let app: INestApplication;
 let base = '';
-let orgDue = '';
-let orgWarn = '';
-let orgBlock = '';
-let orgDup = '';
+let orgDue: Creds;
+let orgWarn: Creds;
+let orgBlock: Creds;
+let orgDup: Creds;
 
-const H = (org: string) => ({ 'Content-Type': 'application/json', 'X-Organization-Id': org });
 const DAY = '2026-09-06';
-// Well-formed v4-shaped UUID that is never inserted (middleware passes, requireOrg 404s).
-const UNKNOWN_ORG = '44444444-4444-4444-8444-444444444444';
-
-async function setupOrg(name: string): Promise<string> {
-  const { createDb } = await import('@debt-copilot/db');
-  const cs = process.env['DATABASE_URL'];
-  if (!cs) throw new Error('DATABASE_URL required');
-  const { db, pool } = createDb(cs);
-  const { organizations } = await import('@debt-copilot/db');
-  const [row] = await db
-    .insert(organizations)
-    .values({ name, timeZone: 'Asia/Tashkent', baseCurrency: 'UZS' })
-    .returning({ id: organizations.id });
-  await pool.end();
-  if (!row) throw new Error('org setup failed');
-  return row.id;
-}
-
-async function teardownOrg(org: string): Promise<void> {
-  const { createDb } = await import('@debt-copilot/db');
-  const cs = process.env['DATABASE_URL'];
-  if (!cs) throw new Error('DATABASE_URL required');
-  const { db, pool } = createDb(cs);
-  const { customers, importJobs, interactions, payments, promises, receivables, reminders, users } =
-    await import('@debt-copilot/db');
-  const { eq } = await import('drizzle-orm');
-  const { organizations } = await import('@debt-copilot/db');
-  // RESTRICT order: children before parents, org last.
-  await db.delete(reminders).where(eq(reminders.organizationId, org));
-  await db.delete(interactions).where(eq(interactions.organizationId, org));
-  await db.delete(payments).where(eq(payments.organizationId, org));
-  await db.delete(promises).where(eq(promises.organizationId, org));
-  await db.delete(receivables).where(eq(receivables.organizationId, org));
-  await db.delete(importJobs).where(eq(importJobs.organizationId, org));
-  await db.delete(users).where(eq(users.organizationId, org));
-  await db.delete(customers).where(eq(customers.organizationId, org));
-  await db.delete(organizations).where(eq(organizations.id, org));
-  await pool.end();
-}
 
 beforeAll(async () => {
-  if (!process.env['DATABASE_URL']) throw new Error('DATABASE_URL required (docker compose up -d db)');
-  app = await NestFactory.create(AppModule, { logger: false });
-  app.useGlobalPipes(
-    new (await import('@nestjs/common')).ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-  await app.listen(0);
-  const url = await app.getUrl();
-  base = url.replace('[::1]', '127.0.0.1');
-  const suffix = Date.now();
-  orgDue = await setupOrg(`e2e-extra-due-${suffix}`);
-  orgWarn = await setupOrg(`e2e-extra-warn-${suffix}`);
-  orgBlock = await setupOrg(`e2e-extra-block-${suffix}`);
-  orgDup = await setupOrg(`e2e-extra-dup-${suffix}`);
+  ({ app, base } = await bootApp());
+  orgDue = await signupOrg(base, 'extra-due');
+  orgWarn = await signupOrg(base, 'extra-warn');
+  orgBlock = await signupOrg(base, 'extra-block');
+  orgDup = await signupOrg(base, 'extra-dup');
 });
 
 afterAll(async () => {
-  await teardownOrg(orgDue);
-  await teardownOrg(orgWarn);
-  await teardownOrg(orgBlock);
-  await teardownOrg(orgDup);
+  await teardownOrg(orgDue.orgId);
+  await teardownOrg(orgWarn.orgId);
+  await teardownOrg(orgBlock.orgId);
+  await teardownOrg(orgDup.orgId);
   await app.close();
 });
 
@@ -104,12 +48,12 @@ describe('import missing cases', () => {
     });
     const first = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgDue),
+      headers: H(orgDue.access),
       body: JSON.stringify({ filename: 'due1.xlsx', rows: [row('2026-08-25')] }),
     });
     expect(first.status).toBe(200);
     const dash1 = (await (
-      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgDue) })
+      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgDue.access) })
     ).json()) as { totals: { UZS: { total: string } } };
     expect(dash1.totals['UZS']?.total).toBe((1_000_000_00n).toString());
 
@@ -118,7 +62,7 @@ describe('import missing cases', () => {
     // observable contract: imported:1 and totals stable (bigint minors).
     const second = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgDue),
+      headers: H(orgDue.access),
       body: JSON.stringify({ filename: 'due2.xlsx', rows: [row('2026-08-30')] }),
     });
     expect(second.status).toBe(200);
@@ -126,7 +70,7 @@ describe('import missing cases', () => {
     expect(body2.imported).toBe(1);
     expect(body2.blocked).toEqual([]);
     const dash2 = (await (
-      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgDue) })
+      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgDue.access) })
     ).json()) as { totals: { UZS: { total: string } } };
     expect(dash2.totals['UZS']?.total).toBe((1_000_000_00n).toString());
   });
@@ -161,7 +105,7 @@ describe('import missing cases', () => {
     };
     const res = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgWarn),
+      headers: H(orgWarn.access),
       body: JSON.stringify(body),
     });
     expect(res.status).toBe(200);
@@ -171,7 +115,7 @@ describe('import missing cases', () => {
     expect(data.blocked).toEqual([]);
     // Both lanes are UZS; totals group per-currency, never mixed.
     const dash = (await (
-      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgWarn) })
+      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgWarn.access) })
     ).json()) as { totals: { UZS: { total: string } } };
     expect(dash.totals['UZS']?.total).toBe((2_500_000_00n).toString());
   });
@@ -195,7 +139,7 @@ describe('import missing cases', () => {
     };
     const res = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgBlock),
+      headers: H(orgBlock.access),
       body: JSON.stringify(body),
     });
     expect(res.status).toBe(200);
@@ -210,7 +154,7 @@ describe('import missing cases', () => {
     expect(data.blocked[0]?.rowNumber).toBe(2);
     expect(data.blocked[0]?.codes).toContain('INVALID_INVOICE_DATE');
     const dash = (await (
-      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgBlock) })
+      await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgBlock.access) })
     ).json()) as { totals: Record<string, unknown>; queue: unknown[] };
     expect(dash.totals['UZS']).toBeUndefined();
     expect(dash.queue).toEqual([]);
@@ -233,18 +177,29 @@ describe('import missing cases', () => {
     };
     const res = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgDup),
+      headers: H(orgDup.access),
       body: JSON.stringify(body),
     });
     expect(res.status).toBe(409);
     const list = (await (
-      await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgDup) })
+      await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgDup.access) })
     ).json()) as unknown[];
     expect(list).toEqual([]);
   });
 
-  it('returns 404 (not empty 200) on dashboard for unknown-but-wellformed org UUID', async () => {
-    const res = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(UNKNOWN_ORG) });
+  it('returns 404 (not empty 200) when the token org no longer exists', async () => {
+    const tmp = await signupOrg(base, 'ghost');
+    const { createDb } = await import('@debt-copilot/db');
+    const cs = process.env['DATABASE_URL'];
+    if (!cs) throw new Error('DATABASE_URL required');
+    const { db, pool } = createDb(cs);
+    const { organizations, users } = await import('@debt-copilot/db');
+    const { eq } = await import('drizzle-orm');
+    await db.delete(users).where(eq(users.organizationId, tmp.orgId));
+    await db.delete(organizations).where(eq(organizations.id, tmp.orgId));
+    await pool.end();
+    // Valid signature, deleted org: 404, never empty-200 data.
+    const res = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(tmp.access) });
     expect(res.status).toBe(404);
   });
 });

@@ -8,6 +8,13 @@
       "when": 1788935867558,
       "tag": "0000_quick_northstar",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788948576797,
+      "tag": "0001_nosy_dark_phoenix",
+      "breakpoints": true
     }
   ]
 }

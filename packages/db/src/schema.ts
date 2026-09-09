@@ -47,6 +47,8 @@ export const users = pgTable(
       .references(() => organizations.id, { onDelete: 'restrict' }),
     name: varchar('name', { length: 200 }).notNull(),
     role: text('role').notNull(),
+    email: varchar('email', { length: 320 }),
+    passwordHash: text('password_hash'),
     telegramUserId: bigint('telegram_user_id', { mode: 'bigint' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
@@ -56,6 +58,10 @@ export const users = pgTable(
     uniqueIndex('users_org_telegram_uidx')
       .on(t.organizationId, t.telegramUserId)
       .where(sql`telegram_user_id IS NOT NULL`),
+    // Same: one email may exist in several orgs; login is email + org scope.
+    uniqueIndex('users_org_email_uidx')
+      .on(t.organizationId, t.email)
+      .where(sql`email IS NOT NULL`),
     check('users_role_chk', sql`${t.role} IN ('owner','manager','collector')`),
   ],
 );
@@ -255,4 +261,42 @@ export const importJobs = pgTable(
     index('import_jobs_organization_idx').on(t.organizationId),
     check('import_jobs_status_chk', sql`${t.status} IN ('pending','done','failed')`),
   ],
+);
+
+// Rotating refresh tokens: only sha256 hashes at rest. Reuse of a spent
+// token revokes the family (theft detection). Expired rows are purged
+// opportunistically on refresh; spent-but-fresh rows stay as tripwires.
+// Deliberately NOT tenant-scoped by column: the user row owns the org, and
+// every lookup joins through it. (RLS task may revisit.)
+export const refreshTokens = pgTable(
+  'refresh_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    tokenHash: char('token_hash', { length: 64 }).notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('refresh_tokens_user_idx').on(t.userId)],
+);
+
+// Single-use Telegram link codes (bot runtime arrives later; the code table
+// and confirm endpoint are the contract it will implement against).
+// Like refresh_tokens: scoped via the user row, not a redundant org column.
+export const telegramLinks = pgTable(
+  'telegram_links',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    codeHash: char('code_hash', { length: 64 }).notNull().unique(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index('telegram_links_user_idx').on(t.userId)],
 );
