@@ -1,80 +1,28 @@
-import { config } from 'dotenv';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { INestApplication } from '@nestjs/common';
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module.js';
-
-config({ path: '../../.env' });
+import { bearer as H, bootApp, signupOrg, teardownOrg, type Creds } from './setup.js';
 
 // ---------------------------------------------------------------------------
-// API e2e against local pg (docker compose up -d db). Scratch orgs per run,
-// full cleanup after. Every request carries X-Organization-Id (demo auth).
+// API e2e against local pg (docker compose up -d db). Scratch orgs per run
+// via signup, full cleanup after. Every request carries a Bearer token.
 // ---------------------------------------------------------------------------
 
 let app: INestApplication;
 let base = '';
-let orgA = '';
-let orgB = '';
+let A: Creds;
+let B: Creds;
 
-const H = (org: string) => ({ 'Content-Type': 'application/json', 'X-Organization-Id': org });
 const DAY = '2026-09-06';
 
-async function setupOrg(name: string): Promise<string> {
-  // Organizations are created directly (no signup endpoint until task 8/auth).
-  const { createDb } = await import('@debt-copilot/db');
-  const cs = process.env['DATABASE_URL'];
-  if (!cs) throw new Error('DATABASE_URL required');
-  const { db, pool } = createDb(cs);
-  const { organizations } = await import('@debt-copilot/db');
-  const [row] = await db
-    .insert(organizations)
-    .values({ name, timeZone: 'Asia/Tashkent', baseCurrency: 'UZS' })
-    .returning({ id: organizations.id });
-  await pool.end();
-  if (!row) throw new Error('org setup failed');
-  return row.id;
-}
-
-async function teardownOrg(org: string): Promise<void> {
-  const { createDb } = await import('@debt-copilot/db');
-  const cs = process.env['DATABASE_URL'];
-  if (!cs) throw new Error('DATABASE_URL required');
-  const { db, pool } = createDb(cs);
-  const { customers, importJobs, interactions, payments, promises, receivables, reminders } =
-    await import('@debt-copilot/db');
-  const { eq } = await import('drizzle-orm');
-  const { organizations } = await import('@debt-copilot/db');
-  await db.delete(reminders).where(eq(reminders.organizationId, org));
-  await db.delete(interactions).where(eq(interactions.organizationId, org));
-  await db.delete(payments).where(eq(payments.organizationId, org));
-  await db.delete(promises).where(eq(promises.organizationId, org));
-  await db.delete(receivables).where(eq(receivables.organizationId, org));
-  await db.delete(importJobs).where(eq(importJobs.organizationId, org));
-  await db.delete(customers).where(eq(customers.organizationId, org));
-  await db.delete(organizations).where(eq(organizations.id, org));
-  await pool.end();
-}
-
 beforeAll(async () => {
-  if (!process.env['DATABASE_URL']) throw new Error('DATABASE_URL required (docker compose up -d db)');
-  app = await NestFactory.create(AppModule, { logger: false });
-  app.useGlobalPipes(
-    new (await import('@nestjs/common')).ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-    }),
-  );
-  await app.listen(0);
-  const url = await app.getUrl();
-  base = url.replace('[::1]', '127.0.0.1');
-  orgA = await setupOrg(`e2e-a-${Date.now()}`);
-  orgB = await setupOrg(`e2e-b-${Date.now()}`);
+  ({ app, base } = await bootApp());
+  A = await signupOrg(base, 'a');
+  B = await signupOrg(base, 'b');
 });
 
 afterAll(async () => {
-  await teardownOrg(orgA);
-  await teardownOrg(orgB);
+  await teardownOrg(A.orgId);
+  await teardownOrg(B.orgId);
   await app.close();
 });
 
@@ -107,25 +55,32 @@ const validBatch = () => ({
 });
 
 describe('tenant wall', () => {
-  it('healthz needs no org, others reject garbage UUIDs', async () => {
+  it('healthz is public, everything else needs a bearer token', async () => {
     const health = await fetch(`${base}/healthz`);
     expect(health.status).toBe(200);
-    const bad = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H('nope') });
-    expect(bad.status).toBe(400);
     const missing = await fetch(`${base}/dashboard?today=${DAY}`);
-    expect(missing.status).toBe(400);
+    expect(missing.status).toBe(401);
+    const garbage = await fetch(`${base}/dashboard?today=${DAY}`, {
+      headers: { Authorization: 'Bearer nope' },
+    });
+    expect(garbage.status).toBe(401);
+    // The old demo header buys nothing on its own.
+    const headerOnly = await fetch(`${base}/dashboard?today=${DAY}`, {
+      headers: { 'X-Organization-Id': A.orgId },
+    });
+    expect(headerOnly.status).toBe(401);
   });
 
   it('org B cannot see org A data, unknown ids 404 (never leak existence)', async () => {
     await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgA),
+      headers: H(A.access),
       body: JSON.stringify(validBatch()),
     });
-    const customersB = await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgB) });
+    const customersB = await fetch(`${base}/customers?today=${DAY}`, { headers: H(B.access) });
     expect(await customersB.json()).toEqual([]);
     const detailB = await fetch(`${base}/customers/00000000-0000-4000-8000-000000000000?today=${DAY}`, {
-      headers: H(orgB),
+      headers: H(B.access),
     });
     expect(detailB.status).toBe(404);
   });
@@ -135,7 +90,7 @@ describe('import → read loop', () => {
   it('imports valid rows, reports blocked, writes audit', async () => {
     const res = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgA),
+      headers: H(A.access),
       body: JSON.stringify(validBatch()),
     });
     expect(res.status).toBe(200);
@@ -144,7 +99,7 @@ describe('import → read loop', () => {
     expect(body.blocked).toHaveLength(1);
     expect(body.blocked[0]?.rowNumber).toBe(3);
 
-    const dash = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgA) });
+    const dash = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(A.access) });
     const data = (await dash.json()) as { totals: { UZS: { total: string; overdue: string } }; queue: unknown[] };
     expect(data.totals['UZS']?.total).toBe((15_000_000_00n).toString());
     expect(data.totals['UZS']?.overdue).toBe((15_000_000_00n).toString());
@@ -154,12 +109,12 @@ describe('import → read loop', () => {
   it('re-imports idempotently: totals stable, audit only on change', async () => {
     const again = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgA),
+      headers: H(A.access),
       body: JSON.stringify(validBatch()),
     });
     const body = (await again.json()) as { imported: number; warned: number; blocked: unknown[] };
     expect(body.imported).toBe(1);
-    const dash = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(orgA) });
+    const dash = await fetch(`${base}/dashboard?today=${DAY}`, { headers: H(A.access) });
     const data = (await dash.json()) as { totals: { UZS: { total: string } } };
     expect(data.totals['UZS']?.total).toBe((15_000_000_00n).toString());
   });
@@ -167,19 +122,19 @@ describe('import → read loop', () => {
   it('400s on malformed bodies, never partial-writes', async () => {
     const res = await fetch(`${base}/imports`, {
       method: 'POST',
-      headers: H(orgA),
+      headers: H(A.access),
       body: JSON.stringify({ filename: 'x.xlsx', rows: [{ nope: true }] }),
     });
     expect(res.status).toBe(400);
   });
 
   it('400s on missing/malformed today and bogus groups', async () => {
-    expect((await fetch(`${base}/dashboard`, { headers: H(orgA) })).status).toBe(400);
-    expect((await fetch(`${base}/dashboard?today=tomorrow`, { headers: H(orgA) })).status).toBe(400);
-    expect((await fetch(`${base}/promises?today=${DAY}&group=bogus`, { headers: H(orgA) })).status).toBe(
+    expect((await fetch(`${base}/dashboard`, { headers: H(A.access) })).status).toBe(400);
+    expect((await fetch(`${base}/dashboard?today=tomorrow`, { headers: H(A.access) })).status).toBe(400);
+    expect((await fetch(`${base}/promises?today=${DAY}&group=bogus`, { headers: H(A.access) })).status).toBe(
       400,
     );
-    expect((await fetch(`${base}/customers/00000000-0000-4000-8000-000000000000?today=${DAY}`, { headers: H(orgA) })).status).toBe(404);
+    expect((await fetch(`${base}/customers/00000000-0000-4000-8000-000000000000?today=${DAY}`, { headers: H(A.access) })).status).toBe(404);
   });
 
   it('400s on nested extra keys and oversized batches', async () => {
@@ -188,7 +143,7 @@ describe('import → read loop', () => {
       rows: [{ ...validBatch().rows[0], injected: true }],
     };
     expect(
-      (await fetch(`${base}/imports`, { method: 'POST', headers: H(orgA), body: JSON.stringify(evil) })).status,
+      (await fetch(`${base}/imports`, { method: 'POST', headers: H(A.access), body: JSON.stringify(evil) })).status,
     ).toBe(400);
     const big = {
       filename: 'big.xlsx',
@@ -207,24 +162,24 @@ describe('import → read loop', () => {
     // 5001 rows ≈ 1 MB: Express's 100 kb JSON cap answers 413 before DTO
     // validation. ArrayMaxSize(5000) is the second net if the cap ever rises.
     expect(
-      (await fetch(`${base}/imports`, { method: 'POST', headers: H(orgB), body: JSON.stringify(big) })).status,
+      (await fetch(`${base}/imports`, { method: 'POST', headers: H(B.access), body: JSON.stringify(big) })).status,
     ).toBe(413);
   });
 
   it('serves customers, detail, and promises board', async () => {
     const list = (await (
-      await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgA) })
+      await fetch(`${base}/customers?today=${DAY}`, { headers: H(A.access) })
     ).json()) as Array<{ id: string; name: string; overdueDays: number }>;
     expect(list).toHaveLength(1);
     expect(list[0]?.name).toBe('E2E Shop');
     expect(list[0]?.overdueDays).toBe(12);
     const detail = (await (
-      await fetch(`${base}/customers/${list[0]?.id}?today=${DAY}`, { headers: H(orgA) })
+      await fetch(`${base}/customers/${list[0]?.id}?today=${DAY}`, { headers: H(A.access) })
     ).json()) as { totals: Array<{ minor: string; currency: string }>; timeline: unknown[] };
     expect(detail.totals).toEqual([{ minor: (15_000_000_00n).toString(), currency: 'UZS' }]);
     expect(detail.timeline.length).toBeGreaterThan(0);
     const board = (await (
-      await fetch(`${base}/promises?today=${DAY}`, { headers: H(orgA) })
+      await fetch(`${base}/promises?today=${DAY}`, { headers: H(A.access) })
     ).json()) as unknown[];
     expect(board).toEqual([]);
   });
@@ -232,7 +187,7 @@ describe('import → read loop', () => {
 
 describe('import edge cases (orgB scratch space, isolated customers)', () => {
   const post = (body: unknown) =>
-    fetch(`${base}/imports`, { method: 'POST', headers: H(orgB), body: JSON.stringify(body) });
+    fetch(`${base}/imports`, { method: 'POST', headers: H(B.access), body: JSON.stringify(body) });
   const row = (over: Record<string, unknown>) => ({
     rowNumber: 2,
     customerName: 'Edge Shop',
@@ -255,7 +210,7 @@ describe('import edge cases (orgB scratch space, isolated customers)', () => {
       const res = await post(body);
       expect(res.status).toBe(200);
     }
-    const list = (await (await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgB) })).json()) as Array<{
+    const list = (await (await fetch(`${base}/customers?today=${DAY}`, { headers: H(B.access) })).json()) as Array<{
       name: string;
     }>;
     expect(list.filter((c) => c.name === 'NoId Shop')).toHaveLength(1);
@@ -279,7 +234,7 @@ describe('import edge cases (orgB scratch space, isolated customers)', () => {
     };
     const res = await post(changed);
     expect(res.status).toBe(409);
-    const list = (await (await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgB) })).json()) as Array<{
+    const list = (await (await fetch(`${base}/customers?today=${DAY}`, { headers: H(B.access) })).json()) as Array<{
       name: string;
       totals: Array<{ minor: string; currency: string }>;
     }>;
@@ -295,7 +250,7 @@ describe('import edge cases (orgB scratch space, isolated customers)', () => {
     });
     expect((await post(up('1000000', 'up1.xlsx'))).status).toBe(200);
     expect((await post(up('1500000', 'up2.xlsx'))).status).toBe(200);
-    const list = (await (await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgB) })).json()) as Array<{
+    const list = (await (await fetch(`${base}/customers?today=${DAY}`, { headers: H(B.access) })).json()) as Array<{
       name: string;
       totals: Array<{ minor: string; currency: string }>;
     }>;
@@ -317,7 +272,7 @@ describe('import edge cases (orgB scratch space, isolated customers)', () => {
     };
     expect((await post(body)).status).toBe(200);
     const list = (await (
-      await fetch(`${base}/customers?today=${DAY}`, { headers: H(orgB) })
+      await fetch(`${base}/customers?today=${DAY}`, { headers: H(B.access) })
     ).json()) as Array<{ name: string; totals: Array<{ minor: string; currency: string }> }>;
     expect(list.find((c) => c.name === 'Multi Shop')?.totals).toEqual([
       { minor: (50_000n).toString(), currency: 'USD' },
@@ -333,20 +288,20 @@ describe('import edge cases (orgB scratch space, isolated customers)', () => {
     const { customers, promises } = await import('@debt-copilot/db');
     const [c] = await db
       .insert(customers)
-      .values({ organizationId: orgB, name: 'Board Shop' })
+      .values({ organizationId: B.orgId, name: 'Board Shop' })
       .returning({ id: customers.id });
     if (!c) throw new Error('setup failed');
     await db.insert(promises).values([
-      { organizationId: orgB, customerId: c.id, amountMinor: 1n, currency: 'UZS', promisedDate: '2026-09-01', status: 'OPEN' },
-      { organizationId: orgB, customerId: c.id, amountMinor: 2n, currency: 'UZS', promisedDate: '2026-09-20', status: 'OPEN' },
+      { organizationId: B.orgId, customerId: c.id, amountMinor: 1n, currency: 'UZS', promisedDate: '2026-09-01', status: 'OPEN' },
+      { organizationId: B.orgId, customerId: c.id, amountMinor: 2n, currency: 'UZS', promisedDate: '2026-09-20', status: 'OPEN' },
     ]);
     await pool.end();
     const broken = (await (
-      await fetch(`${base}/promises?today=${DAY}&group=broken`, { headers: H(orgB) })
+      await fetch(`${base}/promises?today=${DAY}&group=broken`, { headers: H(B.access) })
     ).json()) as Array<{ id: string }>;
     expect(broken).toHaveLength(1);
     const upcoming = (await (
-      await fetch(`${base}/promises?today=${DAY}&group=upcoming`, { headers: H(orgB) })
+      await fetch(`${base}/promises?today=${DAY}&group=upcoming`, { headers: H(B.access) })
     ).json()) as Array<{ id: string }>;
     expect(upcoming).toHaveLength(1);
   });

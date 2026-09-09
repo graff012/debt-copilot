@@ -1,4 +1,5 @@
 import { config } from 'dotenv';
+import { hash } from 'bcryptjs';
 import { createDb } from './index';
 import { customers, organizations, promises, receivables, users } from './schema';
 
@@ -30,6 +31,9 @@ const som = (major: number): bigint => BigInt(major) * 100n;
 async function main(): Promise<void> {
   const connectionString = process.env['DATABASE_URL'];
   if (!connectionString) throw new Error('DATABASE_URL is required');
+  if (process.env['NODE_ENV'] === 'production') {
+    throw new Error('Refusing to seed demo credentials into production');
+  }
   const { db, pool } = createDb(connectionString);
 
   await db.insert(organizations).values({
@@ -39,6 +43,15 @@ async function main(): Promise<void> {
   await db.insert(users).values([
     { id: AZIZ, organizationId: ORG, name: 'Aziz R.', role: 'manager' },
     { id: JASUR, organizationId: ORG, name: 'Jasur K.', role: 'collector' },
+    // Dev-only login. Fake credentials, documented — never real data.
+    {
+      id: '99999999-9999-4999-8999-999999999999',
+      organizationId: ORG,
+      name: 'Demo Owner',
+      email: 'owner@demo.uz',
+      passwordHash: await hash('Demo1234!!', 12),
+      role: 'owner',
+    },
   ]).onConflictDoNothing();
 
   const customerRows = [
