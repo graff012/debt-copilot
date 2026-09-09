@@ -1,6 +1,6 @@
 import { config } from 'dotenv';
-import { createDb } from './index.js';
-import { customers, organizations, promises, receivables, users } from './schema.js';
+import { createDb } from './index';
+import { customers, organizations, promises, receivables, users } from './schema';
 
 config({ path: '../../.env' });
 
