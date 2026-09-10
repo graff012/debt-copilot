@@ -1,4 +1,5 @@
 export type { Currency, Money, OrgContext, PromiseStatus, PromiseToPay, Receivable } from './types';
+export { formatMinor } from './format';
 export { addDays, assertDayString, diffDays, getOrgToday } from './time';
 export {
   assertMoney,

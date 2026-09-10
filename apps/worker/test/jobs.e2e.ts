@@ -193,7 +193,7 @@ describe('runMorningSummary skipped counting', () => {
       const mine = sent.filter((s) => s.id === tgId);
       expect(mine).toHaveLength(1);
       expect(mine[0]?.text).toContain('2026-09-06');
-      expect(mine[0]?.text).toContain('500 UZS');
+      expect(mine[0]?.text).toContain('5 UZS');
       // No message can target the unlinked user (no telegram id); the run
       // counts them as skipped. Globals cover other orgs too, so use >=.
       expect(sent.every((s) => typeof s.id === 'bigint')).toBe(true);
