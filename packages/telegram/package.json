@@ -1,0 +1,25 @@
+{
+  "name": "@debt-copilot/telegram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@debt-copilot/db": "workspace:*",
+    "@debt-copilot/domain": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "grammy": "^1.46.0",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "@types/pg": "^8.23.1"
+  }
+}

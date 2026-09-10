@@ -1,8 +1,9 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { ConflictException, Inject, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, Inject, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { and, eq, isNull } from 'drizzle-orm';
 import { telegramLinks, users, type Db } from '@debt-copilot/db';
 import { DbService } from '../db/db.module.js';
+import { requireOrg } from '../tenant/require-org.js';
 import type { SessionUser } from '../tenant/org.decorator.js';
 
 const LINK_TTL_MS = 15 * 60_000;
@@ -41,8 +42,7 @@ export class TelegramService {
     return { url: `https://t.me/${botUsername()}?start=link_${code}`, expiresInMinutes: 15 };
   }
 
-  async confirm(code: string, telegramUserId: number, presentedSecret: string): Promise<void> {
-    const expected = Buffer.from(botSecret(), 'utf8');
+  async confirm(code: string, telegramUserId: number, presentedSecret: string): Promise<void> {    const expected = Buffer.from(botSecret(), 'utf8');
     const presented = Buffer.from(presentedSecret, 'utf8');
     // Constant-time compare (length check first: length itself is not secret).
     if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) {
@@ -86,5 +86,24 @@ export class TelegramService {
         .set({ telegramUserId: BigInt(telegramUserId) })
         .where(eq(users.id, claimed.userId));
     });
+  }
+
+  /** Bot-side identity lookup. Unknown senders 404 (bot replies "please link first"). */
+  async context(
+    telegramUserId: number,
+    presentedSecret: string,
+  ): Promise<{ userId: string; organizationId: string; name: string; timeZone: string }> {
+    const expected = Buffer.from(botSecret(), 'utf8');
+    const presented = Buffer.from(presentedSecret, 'utf8');
+    if (presented.length !== expected.length || !timingSafeEqual(presented, expected)) {
+      throw new UnauthorizedException('Bad bot secret');
+    }
+    const [user] = await this.db
+      .select()
+      .from(users)
+      .where(eq(users.telegramUserId, BigInt(telegramUserId)));
+    if (!user) throw new NotFoundException('Telegram account is not linked');
+    const org = await requireOrg(this.db, user.organizationId);
+    return { userId: user.id, organizationId: user.organizationId, name: user.name, timeZone: org.timeZone };
   }
 }
