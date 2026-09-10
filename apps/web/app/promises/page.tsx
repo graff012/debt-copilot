@@ -1,6 +1,15 @@
 import Link from 'next/link';
-import { buildPromisesBoard, type PromiseRow } from '@/lib/promises';
+import { redirect } from 'next/navigation';
+import { getOrgToday } from '@debt-copilot/domain';
+import { ApiError, api } from '@/lib/api';
+import { toPromiseBoard, type ApiPromiseRow } from '@/lib/api-customers';
+import type { PromiseRow } from '@/lib/api-customers';
 import { formatMoney } from '@/lib/format';
+
+interface Me {
+  organizationId: string;
+  timeZone: string;
+}
 
 function Group({ title, rows, empty }: { title: string; rows: readonly PromiseRow[]; empty: string }) {
   return (
@@ -30,7 +39,6 @@ function Group({ title, rows, empty }: { title: string; rows: readonly PromiseRo
                 {formatMoney(p.amountMinor, p.currency)}
               </span>
               <span className="text-slate-500">{p.promisedDate}</span>
-              <span className="text-xs text-slate-500">{p.assignee}</span>
             </li>
           ))}
         </ul>
@@ -39,13 +47,22 @@ function Group({ title, rows, empty }: { title: string; rows: readonly PromiseRo
   );
 }
 
-export default function PromisesPage() {
-  const board = buildPromisesBoard();
+export default async function PromisesPage() {
+  let board;
+  try {
+    const me = await api<Me>('/auth/me');
+    const today = getOrgToday({ organizationId: me.organizationId, timeZone: me.timeZone, now: new Date() });
+    const rows = await api<ApiPromiseRow[]>(`/promises?today=${today}`);
+    board = { today, ...toPromiseBoard(rows) };
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirect('/login');
+    throw err;
+  }
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <header>
         <h1 className="text-2xl font-bold">Promises</h1>
-        <p className="text-sm text-slate-500">Day {board.today} · demo fixtures</p>
+        <p className="text-sm text-slate-500">Day {board.today} · live from the API</p>
       </header>
       <Group title="Broken" rows={board.broken} empty="No broken promises. Good." />
       <Group title="Due today" rows={board.dueToday} empty="Nothing due today." />
