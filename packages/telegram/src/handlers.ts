@@ -322,10 +322,9 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
     }
   });
 
-  // Confirm carries the customer id; amount+date+currency ride in the session
-  // and must agree with the button — forged confirm for another customer dies.
+  // Confirm carries the customer id; amount+date+currency ride in the session.
+  // Compared by exact match (decodeCallback only speaks v1:customer actions).
   bot.callbackQuery(/^confirm:/, async (ctx) => {
-    const decoded = decodeCallback(ctx.callbackQuery.data);
     const pending = ctx.session.pending;
     if (!pending || pending.kind !== 'promise-confirm') {
       await ctx.answerCallbackQuery('Nothing to confirm.');
@@ -338,7 +337,7 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
       await ctx.answerCallbackQuery('Nothing to confirm.');
       return;
     }
-    if (!decoded || decoded.customerId !== pending.customerId) {
+    if (ctx.callbackQuery.data !== `confirm:${pending.customerId}`) {
       ctx.session.pending = undefined;
       await ctx.answerCallbackQuery('Mismatch — start over.');
       return;
