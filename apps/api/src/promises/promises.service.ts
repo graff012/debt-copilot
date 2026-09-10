@@ -1,9 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
-import { isPromiseBroken } from '@debt-copilot/domain';
+import { getOrgToday, isPromiseBroken } from '@debt-copilot/domain';
 import { customers, promises, type Db } from '@debt-copilot/db';
 import { DbService } from '../db/db.module.js';
 import { requireOrg } from '../tenant/require-org.js';
+import { BadRequestException } from '@nestjs/common';
 
 export type PromiseGroup = 'today' | 'upcoming' | 'broken';
 
@@ -15,8 +16,15 @@ export class PromisesService {
     this.db = dbService.db;
   }
 
-  async board(today: string, orgId: string, group?: string) {
-    await requireOrg(this.db, orgId);
+  async board(today: string | undefined, orgId: string, group?: string) {
+    const org = await requireOrg(this.db, orgId);
+    const day =
+      today === undefined || today === ''
+        ? getOrgToday({ organizationId: orgId, timeZone: org.timeZone, now: new Date() })
+        : today;
+    if (!/^(\d{4})-(\d{2})-(\d{2})$/.test(day)) {
+      throw new BadRequestException('today must be YYYY-MM-DD');
+    }
     const rows = await this.db
       .select({
         id: promises.id,
@@ -49,9 +57,9 @@ export class PromisesService {
           promisedDate: p.promisedDate,
           status: 'OPEN',
         },
-        today,
+        day,
       );
-      const g: PromiseGroup = broken ? 'broken' : p.promisedDate === today ? 'today' : 'upcoming';
+      const g: PromiseGroup = broken ? 'broken' : p.promisedDate === day ? 'today' : 'upcoming';
       if (group && g !== group) continue;
       out.push({
         id: p.id,

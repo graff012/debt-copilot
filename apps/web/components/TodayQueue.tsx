@@ -1,4 +1,4 @@
-import type { QueueRow } from '@/lib/dashboard';
+import type { QueueRow } from '@/lib/api-dashboard';
 import { formatMoney } from '@/lib/format';
 import { StatusBadge } from './StatusBadge';
 
@@ -21,7 +21,7 @@ export function TodayQueue({ rows }: { rows: readonly QueueRow[] }) {
       <ul className="mt-4 space-y-3">
         {rows.map((r) => (
           <li
-            key={r.customerId}
+            key={`${r.customerId}|${r.currency}`}
             className={`rounded-lg border border-slate-200 bg-white p-4 ${ROW_BORDER[r.status] ?? ''}`}
           >
             <div className="flex flex-wrap items-center gap-2">

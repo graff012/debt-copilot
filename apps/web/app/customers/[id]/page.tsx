@@ -1,11 +1,14 @@
 import Link from 'next/link';
-import { notFound } from 'next/navigation';
-import { buildCustomerDetail, buildCustomerList } from '@/lib/customers';
+import { notFound, redirect } from 'next/navigation';
+import { getOrgToday } from '@debt-copilot/domain';
+import { ApiError, api } from '@/lib/api';
+import { toCustomerDetail, type ApiCustomerDetail } from '@/lib/api-customers';
 import { formatMoney } from '@/lib/format';
 import { StatusBadge } from '@/components/StatusBadge';
 
-export function generateStaticParams(): Array<{ id: string }> {
-  return buildCustomerList().map((r) => ({ id: r.customerId }));
+interface Me {
+  organizationId: string;
+  timeZone: string;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -14,7 +17,24 @@ const KIND_LABEL: Record<string, string> = {
   promise: 'Promise event',
   overdue: 'Overdue event',
   invoice: 'Invoice',
+  reminder: 'Reminder',
+  payment: 'Payment',
+  status: 'Update',
 };
+
+async function load(id: string) {
+  const me = await api<Me>('/auth/me');
+  const today = getOrgToday({ organizationId: me.organizationId, timeZone: me.timeZone, now: new Date() });
+  try {
+    const dto = await api<ApiCustomerDetail>(
+      `/customers/${id}?today=${today}`,
+    );
+    return toCustomerDetail(dto, today);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) notFound();
+    throw err;
+  }
+}
 
 export default async function CustomerDetailPage({
   params,
@@ -24,9 +44,12 @@ export default async function CustomerDetailPage({
   const { id } = await params;
   let detail;
   try {
-    detail = buildCustomerDetail(id);
-  } catch {
-    notFound();
+    detail = await load(id);
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirect('/login');
+    // Unknown id, cross-org id, and malformed UUIDs all read as "not here".
+    if (err instanceof ApiError && (err.status === 404 || err.status === 400)) notFound();
+    throw err;
   }
   return (
     <div className="mx-auto max-w-6xl space-y-4">
@@ -50,9 +73,11 @@ export default async function CustomerDetailPage({
         <div className="mt-3 flex flex-wrap gap-6">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500">Outstanding</p>
-            <p className="text-xl font-bold tabular-nums text-red-700">
-              {formatMoney(detail.outstandingMinor, detail.currency)}
-            </p>
+            {detail.totals.map((t) => (
+              <p key={t.currency} className="text-xl font-bold tabular-nums text-red-700">
+                {formatMoney(t.minor, t.currency)}
+              </p>
+            ))}
           </div>
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500">Collector</p>

@@ -1,4 +1,4 @@
-import type { BucketView } from '@/lib/dashboard';
+import type { BucketView } from '@/lib/api-dashboard';
 import { formatMillions } from '@/lib/format';
 
 const BAR_COLORS: Record<string, string> = {

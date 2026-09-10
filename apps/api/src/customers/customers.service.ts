@@ -1,18 +1,25 @@
 import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, eq } from 'drizzle-orm';
 import { addDays, diffDays, getOrgToday, isOverdue, isPromiseBroken } from '@debt-copilot/domain';
-import { customers, interactions, promises, receivables, type Db } from '@debt-copilot/db';
+import { customers, interactions, promises, receivables, users, type Db } from '@debt-copilot/db';
 import { DbService } from '../db/db.module.js';
 import { requireOrg } from '../tenant/require-org.js';
 
 const DAY_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
-function requireDay(today: string): void {
-  if (!DAY_RE.test(today)) throw new BadRequestException('today must be YYYY-MM-DD');
+function defaultDay(today: string | undefined, timeZone: string, orgId: string): string {
+  // Omitted ?today= means the org-local day (client clocks lie). Explicit
+  // values stay for tests and demos. Unifies dashboard/customers/promises.
+  const day =
+    today === undefined || today === ''
+      ? getOrgToday({ organizationId: orgId, timeZone, now: new Date() })
+      : today;
+  if (!DAY_RE.test(day)) throw new BadRequestException('today must be YYYY-MM-DD');
+  return day;
 }
 
 export interface CustomerDetailDto {
-  customer: { id: string; name: string; phone: string | null; taxId: string | null };
+  customer: { id: string; name: string; phone: string | null; taxId: string | null; assignee: string };
   /** One lane per currency: exposure is never summed across currencies. */
   totals: Array<{ minor: string; currency: string }>;
   overdueDays: number;
@@ -40,16 +47,20 @@ export class CustomersService {
     this.db = dbService.db;
   }
 
-  async list(today: string, orgId: string) {
-    requireDay(today);
-    await requireOrg(this.db, orgId);
+  async list(today: string | undefined, orgId: string) {
+    const org = await requireOrg(this.db, orgId);
+    const day = defaultDay(today, org.timeZone, orgId);
     const recs = await this.db
       .select()
       .from(receivables)
       .where(eq(receivables.organizationId, orgId));
     const custs = await this.db
-      .select()
+      .select({ id: customers.id, name: customers.name, assignee: users.name })
       .from(customers)
+      .leftJoin(
+        users,
+        and(eq(users.id, customers.assignedUserId), eq(users.organizationId, orgId)),
+      )
       .where(eq(customers.organizationId, orgId));
     const proms = await this.db
       .select()
@@ -62,8 +73,8 @@ export class CustomersService {
       for (const r of mine) {
         const lane = lanes.get(r.currency) ?? { minor: 0n, overdue: 0 };
         lane.minor += r.remainingMinor;
-        if (r.remainingMinor > 0n && r.dueDate < today) {
-          const d = diffDays(r.dueDate, today);
+        if (r.remainingMinor > 0n && r.dueDate < day) {
+          const d = diffDays(r.dueDate, day);
           if (d > lane.overdue) lane.overdue = d;
         }
         lanes.set(r.currency, lane);
@@ -88,16 +99,17 @@ export class CustomersService {
               promisedDate: p.promisedDate,
               status: 'OPEN',
             },
-            today,
+            day,
           )
         ) {
           broken += 1;
         }
-        if (p.status === 'OPEN' && p.promisedDate === today) promiseToday = true;
+        if (p.status === 'OPEN' && p.promisedDate === day) promiseToday = true;
       }
       return {
         id: c.id,
         name: c.name,
+        assignee: c.assignee ?? 'Unassigned',
         totals,
         overdueDays,
         broken,
@@ -106,12 +118,16 @@ export class CustomersService {
     });
   }
 
-  async detail(id: string, today: string, orgId: string): Promise<CustomerDetailDto> {
-    requireDay(today);
+  async detail(id: string, today: string | undefined, orgId: string): Promise<CustomerDetailDto> {
     const org = await requireOrg(this.db, orgId);
+    const day = defaultDay(today, org.timeZone, orgId);
     const [c] = await this.db
-      .select()
+      .select({ id: customers.id, name: customers.name, phone: customers.phone, taxId: customers.taxId, assignee: users.name })
       .from(customers)
+      .leftJoin(
+        users,
+        and(eq(users.id, customers.assignedUserId), eq(users.organizationId, orgId)),
+      )
       .where(and(eq(customers.organizationId, orgId), eq(customers.id, id)));
     if (!c) throw new NotFoundException('Customer not found');
     const recs = await this.db
@@ -143,9 +159,9 @@ export class CustomersService {
           original: { minor: r.originalMinor, currency: r.currency },
           remaining: { minor: r.remainingMinor, currency: r.currency },
         },
-        today,
+        day,
       );
-      const d = overdue ? diffDays(r.dueDate, today) : 0;
+      const d = overdue ? diffDays(r.dueDate, day) : 0;
       if (d > overdueDays) overdueDays = d;
       invoices.push({
         invoiceNumber: r.invoiceNumber,
@@ -178,11 +194,11 @@ export class CustomersService {
                 promisedDate: p.promisedDate,
                 status: 'OPEN',
               },
-              today,
+              day,
             )
             ? 'broken'
-            : p.promisedDate === today
-              ? 'due-today'
+            : p.promisedDate === day
+              ? 'due-day'
               : 'upcoming'
           : p.status.toLowerCase();
       if (state === 'broken') broken += 1;
@@ -206,7 +222,7 @@ export class CustomersService {
       .map(([currency, minor]) => ({ minor: minor.toString(), currency }))
       .sort((a, b) => a.currency.localeCompare(b.currency));
     return {
-      customer: { id: c.id, name: c.name, phone: c.phone, taxId: c.taxId },
+      customer: { id: c.id, name: c.name, phone: c.phone, taxId: c.taxId, assignee: c.assignee ?? 'Unassigned' },
       totals,
       overdueDays,
       broken,

@@ -7,7 +7,7 @@ import {
   type ImportSummary,
   type ValidatedRow,
 } from '@debt-copilot/domain';
-import { ORG_ID } from './fixtures';
+import { ORG_ID } from './import-org';
 
 // ---------------------------------------------------------------------------
 // Import preview: a fixed demo batch through the real domain validators.

@@ -1,4 +1,4 @@
-import type { DebtorRow } from '@/lib/dashboard';
+import type { DebtorRow } from '@/lib/api-dashboard';
 import { formatMoney } from '@/lib/format';
 
 export function TopDebtors({ rows }: { rows: readonly DebtorRow[] }) {
@@ -13,7 +13,7 @@ export function TopDebtors({ rows }: { rows: readonly DebtorRow[] }) {
       </h2>
       <ol className="mt-4 space-y-3">
         {shown.map((d, i) => (
-          <li key={d.customerId} className="flex items-baseline justify-between gap-3">
+          <li key={`${d.customerId}|${d.currency}`} className="flex items-baseline justify-between gap-3">
             <div className="min-w-0">
               <span className="mr-2 text-xs tabular-nums text-slate-400">
                 {String(i + 1).padStart(2, '0')}

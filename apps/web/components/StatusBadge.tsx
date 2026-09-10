@@ -1,4 +1,4 @@
-import type { QueueStatus } from '@/lib/dashboard';
+import type { QueueStatus } from '@/lib/api-dashboard';
 
 const STYLES: Record<QueueStatus, string> = {
   broken: 'bg-red-100 text-red-800',
