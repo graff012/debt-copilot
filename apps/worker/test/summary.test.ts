@@ -30,9 +30,10 @@ describe('composeBriefing', () => {
   it('renders per-currency totals and top debtors deterministically', () => {
     const { text, buttons } = composeBriefing(briefing);
     expect(text).toContain('2026-09-06');
-    expect(text).toContain('4660000000 UZS');
+    expect(text).toContain('46,600,000 UZS');
     expect(text).toContain('Promises due today: 2');
     expect(text).toContain('Mega Shop');
+    expect(text).toContain('Total: 46,600,000 UZS.');
     expect(buttons).toHaveLength(4); // Called + Promise per debtor
     expect(buttons[0]?.data).toContain(':called:');
     expect(buttons[1]?.data).toContain(':promise:');
@@ -49,8 +50,10 @@ describe('composeBriefing', () => {
         { minor: 50_000n, currency: 'USD' },
       ],
     });
-    expect(text).toContain('100000000 UZS');
-    expect(text).toContain('50000 USD');
+    expect(text).toContain('1,000,000 UZS');
+    expect(text).toContain('500 USD');
+    expect(text).toContain('Total: 1,000,000 UZS.');
+    expect(text).toContain('Total: 500 USD.');
     expect(text).not.toContain('100050000');
   });
 

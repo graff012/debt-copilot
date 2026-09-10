@@ -1,6 +1,6 @@
 import { Bot, Context, InlineKeyboard, session, type SessionFlavor } from 'grammy';
 import { and, eq } from 'drizzle-orm';
-import { assertDayString, getOrgToday } from '@debt-copilot/domain';
+import { assertDayString, formatMinor, getOrgToday } from '@debt-copilot/domain';
 import { customers, interactions, promises, receivables, type Db } from '@debt-copilot/db';
 import { decodeCallback } from './callbacks.js';
 import { resolveContext, type BotContext } from './context.js';
@@ -109,8 +109,16 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
     }
   });
 
+  // Owns ONLY v1:customer callbacks. Namespaced flows (date:, amount:,
+  // confirm:, cancel:) have dedicated handlers below: this one acks silently
+  // and, critically, never touches the session (it once wiped pending flows).
   bot.on('callback_query:data', async (ctx) => {
-    const parsed = decodeCallback(ctx.callbackQuery.data);
+    const data = ctx.callbackQuery.data;
+    if (!data.startsWith('v1:')) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    const parsed = decodeCallback(data);
     if (!parsed) {
       await ctx.answerCallbackQuery('Unknown button.');
       return;
@@ -168,7 +176,6 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
       await ctx.reply(`Which currency is the promise in?`, { reply_markup: keyboard });
       return;
     }
-    await ctx.answerCallbackQuery('Cancelled.');
   });
 
   bot.callbackQuery(/^ccy:([A-Z]{3})$/, async (ctx) => {
@@ -383,7 +390,9 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
     });
     ctx.session.pending = undefined;
     await ctx.answerCallbackQuery('Promise saved.');
-    await ctx.reply(`Saved: ${customer.name} promised ${amountMinor} ${currency} on ${promisedDate}.`);
+    await ctx.reply(
+      `Saved: ${customer.name} promised ${formatMinor(BigInt(amountMinor), currency)} on ${promisedDate}.`,
+    );
   });
 
   bot.callbackQuery(/^cancel:/, async (ctx) => {
@@ -410,7 +419,7 @@ async function askAmount(
   const lane = lanes.find((l) => l.currency === pending.currency);
   const outstanding = lane?.minor ?? 0n;
   const currency = pending.currency ?? lane?.currency ?? 'UZS';
-  const keyboard = new InlineKeyboard().text(`Full ${outstanding.toString()}`, 'amount:full');
+  const keyboard = new InlineKeyboard().text(`Full ${formatMinor(outstanding, currency)}`, 'amount:full');
   // Session carries the flow (callback data budget is 64 bytes).
   ctx.session.pending = {
     kind: 'promise-amount',
@@ -424,11 +433,12 @@ async function askAmount(
 }
 
 async function askConfirm(ctx: BotCtx, pending: PendingFlow, amountMinor: string): Promise<void> {
+  const currency = pending.currency ?? 'UZS';
   const keyboard = new InlineKeyboard()
     .text('Confirm', `confirm:${pending.customerId}`)
     .text('Cancel', `cancel:${pending.customerId}`);
   await ctx.reply(
-    `Promise: ${amountMinor} from ${pending.customerName} on ${pending.promisedDate}. Confirm?`,
+    `Promise: ${formatMinor(BigInt(amountMinor), currency)} from ${pending.customerName} on ${pending.promisedDate}. Confirm?`,
     { reply_markup: keyboard },
   );
 }

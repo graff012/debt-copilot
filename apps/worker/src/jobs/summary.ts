@@ -1,5 +1,5 @@
 import { and, eq, isNotNull, isNull } from 'drizzle-orm';
-import { diffDays, getOrgToday, isPromiseBroken } from '@debt-copilot/domain';
+import { diffDays, formatMinor, getOrgToday, isPromiseBroken } from '@debt-copilot/domain';
 import { customers, organizations, promises, receivables, users, type Db } from '@debt-copilot/db';
 import { encodeCallback } from '@debt-copilot/telegram';
 import type { BotButton, Sender } from '../sender.js';
@@ -37,14 +37,18 @@ export function composeBriefing(b: CollectorBriefing): ComposedBriefing {
     lines.push('Nothing overdue on your book.');
   }
   for (const t of b.totals) {
-    lines.push(`Overdue: ${t.minor.toString()} ${t.currency} minor units.`);
+    lines.push(`Overdue: ${formatMinor(t.minor, t.currency)}.`);
   }
   lines.push(`Promises due today: ${b.promisesDueToday}. Broken promises: ${b.brokenCount}.`);
   const buttons: BotButton[] = [];
   for (const d of b.topDebtors.slice(0, 5)) {
-    lines.push(`- ${d.name}: ${d.minor.toString()} ${d.currency}, ${d.overdueDays}d overdue`);
+    lines.push(`- ${d.name}: ${formatMinor(d.minor, d.currency)}, ${d.overdueDays}d overdue`);
     buttons.push({ label: `Called ${d.name}`, data: encodeCallback('called', d.customerId) });
     buttons.push({ label: `Promise ${d.name}`, data: encodeCallback('promise', d.customerId) });
+  }
+  // The closing total, per currency: the number to collect today.
+  for (const t of b.totals) {
+    lines.push(`Total: ${formatMinor(t.minor, t.currency)}.`);
   }
   return { text: lines.join('\n'), buttons };
 }
