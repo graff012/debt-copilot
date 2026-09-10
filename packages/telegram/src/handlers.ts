@@ -109,8 +109,16 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
     }
   });
 
+  // Owns ONLY v1:customer callbacks. Namespaced flows (date:, amount:,
+  // confirm:, cancel:) have dedicated handlers below: this one acks silently
+  // and, critically, never touches the session (it once wiped pending flows).
   bot.on('callback_query:data', async (ctx) => {
-    const parsed = decodeCallback(ctx.callbackQuery.data);
+    const data = ctx.callbackQuery.data;
+    if (!data.startsWith('v1:')) {
+      await ctx.answerCallbackQuery();
+      return;
+    }
+    const parsed = decodeCallback(data);
     if (!parsed) {
       await ctx.answerCallbackQuery('Unknown button.');
       return;
@@ -168,7 +176,6 @@ export function createBot(token: string, deps: BotDeps): Bot<BotCtx> {
       await ctx.reply(`Which currency is the promise in?`, { reply_markup: keyboard });
       return;
     }
-    await ctx.answerCallbackQuery('Cancelled.');
   });
 
   bot.callbackQuery(/^ccy:([A-Z]{3})$/, async (ctx) => {

@@ -8,9 +8,9 @@ export interface BotButton {
   data: string;
 }
 
-export type CallbackAction = 'called' | 'promise' | 'note' | 'confirm' | 'cancel';
+export type CallbackAction = 'called' | 'promise' | 'note';
 
-const ACTIONS: ReadonlySet<string> = new Set(['called', 'promise', 'note', 'confirm', 'cancel']);
+const ACTIONS: ReadonlySet<string> = new Set(['called', 'promise', 'note']);
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface ParsedCallback {

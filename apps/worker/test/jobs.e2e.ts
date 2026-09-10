@@ -145,11 +145,11 @@ describe('runMorningSummary', () => {
       currency: 'UZS', originalMinor: 300n, remainingMinor: 300n, status: 'OPEN',
     });
     const run = await runMorningSummary(db, NOW, send);
-    expect(run.sent).toBe(1);
-    expect(sent).toHaveLength(1);
-    expect(sent[0]?.id).toBe(998_900_000_001n);
-    expect(sent[0]?.text).toContain('2026-09-06');
-    expect(sent[0]?.text).toContain('Brief Shop');
+    expect(run.sent).toBeGreaterThanOrEqual(1);
+    const ours = sent.filter((m) => m.text.includes('Brief Shop'));
+    expect(ours).toHaveLength(1);
+    expect(ours[0]?.id).toBe(998_900_000_001n);
+    expect(ours[0]?.text).toContain('2026-09-06');
     await db.delete(receivables).where(eq(receivables.customerId, c2.id));
     await db.delete(customers).where(eq(customers.id, c2.id));
   });

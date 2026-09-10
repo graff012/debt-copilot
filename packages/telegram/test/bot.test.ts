@@ -64,14 +64,18 @@ describe('callbacks', () => {
     expect(() => encodeCallback('called', 'mega')).toThrow(RangeError);
   });
 
-  it('round-trips cancel and pins the full action set', () => {
-    const cancel = encodeCallback('cancel', id);
-    expect(cancel.length).toBeLessThanOrEqual(64);
-    expect(decodeCallback(cancel)).toEqual({ action: 'cancel', customerId: id });
-    for (const action of ['called', 'promise', 'note', 'confirm', 'cancel'] as const) {
+  it('round-trips customer actions and rejects flow-local namespaces', () => {
+    for (const action of ['called', 'promise', 'note'] as const) {
       const data = encodeCallback(action, id);
       expect(data.length).toBeLessThanOrEqual(64);
       expect(decodeCallback(data)).toEqual({ action, customerId: id });
     }
+    // confirm:/cancel:/date:/amount: are namespaced flows with dedicated
+    // handlers — the generic decoder must NOT claim them (live bug: it once
+    // swallowed Confirm and wiped the pending session).
+    expect(decodeCallback(`confirm:${id}`)).toBeNull();
+    expect(decodeCallback(`cancel:${id}`)).toBeNull();
+    expect(decodeCallback('date:today')).toBeNull();
+    expect(decodeCallback('amount:full')).toBeNull();
   });
 });
