@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import {
+  BadRequestException,
   ConflictException,
   Inject,
   Injectable,
@@ -9,6 +10,7 @@ import { and, eq, lt } from 'drizzle-orm';
 import { JwtService } from '@nestjs/jwt';
 import { organizations, refreshTokens, users, type Db } from '@debt-copilot/db';
 import { DbService } from '../db/db.module.js';
+import { requireOrg } from '../tenant/require-org.js';
 import { hashPassword, normalizeEmail, verifyPassword } from './password.js';
 import type { LoginDto, SignupDto } from './auth.dto.js';
 
@@ -55,14 +57,21 @@ export class AuthService {
       // bcrypt truncates past 72 BYTES (chars ≠ bytes for multibyte input).
       throw new ConflictException('Password is too long');
     }
+    const timeZone = dto.timeZone.trim();
+    try {
+      // IANA check now: an invalid zone would 500 every org-today calc later.
+      new Intl.DateTimeFormat('en-CA', { timeZone });
+    } catch {
+      throw new BadRequestException('Unknown timezone');
+    }
     const passwordHash = await hashPassword(dto.password);
     // Fresh orgId per signup, so the email unique index cannot collide here;
     // the same address may own several orgs (login disambiguates).
     const created = await this.db.transaction(async (tx) => {
-      const [org] = await tx
-        .insert(organizations)
-        .values({ name: dto.organizationName.trim(), timeZone: dto.timeZone.trim(), baseCurrency: 'UZS' })
-        .returning({ id: organizations.id });
+        const [org] = await tx
+          .insert(organizations)
+          .values({ name: dto.organizationName.trim(), timeZone, baseCurrency: 'UZS' })
+          .returning({ id: organizations.id });
       if (!org) throw new Error('Org insert failed');
       const [user] = await tx
         .insert(users)
@@ -148,6 +157,18 @@ export class AuthService {
 
   async logout(refreshToken: string): Promise<void> {
     await this.db.delete(refreshTokens).where(eq(refreshTokens.tokenHash, sha256(refreshToken)));
+  }
+
+  async me(userId: string): Promise<{
+    userId: string;
+    organizationId: string;
+    role: string;
+    timeZone: string;
+  }> {
+    const [user] = await this.db.select().from(users).where(eq(users.id, userId));
+    if (!user) throw new UnauthorizedException('Invalid session');
+    const org = await requireOrg(this.db, user.organizationId);
+    return { userId: user.id, organizationId: org.id, role: user.role, timeZone: org.timeZone };
   }
 
   async revokeFamily(userId: string): Promise<void> {

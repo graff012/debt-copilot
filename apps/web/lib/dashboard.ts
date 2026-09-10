@@ -72,7 +72,7 @@ export interface DashboardData {
   readonly debtors: readonly DebtorRow[];
 }
 
-const BUCKET_LABELS: Record<AgingBucket, string> = {
+export const BUCKET_LABELS: Record<AgingBucket, string> = {
   current: 'Not due',
   d1_7: '1–7 days',
   d8_30: '8–30 days',
@@ -81,7 +81,7 @@ const BUCKET_LABELS: Record<AgingBucket, string> = {
   d90p: '90+ days',
 };
 
-const BUCKET_ORDER: readonly AgingBucket[] = ['current', 'd1_7', 'd8_30', 'd31_60', 'd61_90', 'd90p'];
+export const BUCKET_ORDER: readonly AgingBucket[] = ['current', 'd1_7', 'd8_30', 'd31_60', 'd61_90', 'd90p'];
 
 function meta(customerId: string): { name: string; assignee: string } {
   const m = CUSTOMERS[customerId];

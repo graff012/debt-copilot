@@ -1,18 +1,40 @@
+import { redirect } from 'next/navigation';
+import { getOrgToday } from '@debt-copilot/domain';
 import { AgingBar } from '@/components/AgingBar';
 import { KpiCards } from '@/components/KpiCards';
 import { TodayQueue } from '@/components/TodayQueue';
 import { TopDebtors } from '@/components/TopDebtors';
-import { buildDashboard } from '@/lib/dashboard';
+import { ApiError, api } from '@/lib/api';
+import { toDashboardData, type ApiDashboard } from '@/lib/api-dashboard';
 import { formatMoney } from '@/lib/format';
 
-export default function DashboardPage() {
-  const d = buildDashboard();
+interface Me {
+  organizationId: string;
+  timeZone: string;
+}
+
+async function load() {
+  const me = await api<Me>('/auth/me');
+  const today = getOrgToday({ organizationId: me.organizationId, timeZone: me.timeZone, now: new Date() });
+  const dto = await api<ApiDashboard>(`/dashboard?today=${today}`);
+  return toDashboardData(dto, me.timeZone);
+}
+
+export default async function DashboardPage() {
+  let data;
+  try {
+    data = await load();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) redirect('/login');
+    throw err;
+  }
+  const d = data;
   return (
     <div className="mx-auto max-w-6xl space-y-4">
       <header>
         <h1 className="text-2xl font-bold">Collections overview</h1>
         <p className="text-sm text-slate-500">
-          Day {d.today} ({d.timeZone}) · demo fixtures, computed by @debt-copilot/domain
+          Day {d.today} ({d.timeZone}) · live from the API
         </p>
       </header>
       <KpiCards
