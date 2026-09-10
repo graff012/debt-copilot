@@ -128,8 +128,9 @@ describe('import → read loop', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400s on missing/malformed today and bogus groups', async () => {
-    expect((await fetch(`${base}/dashboard`, { headers: H(A.access) })).status).toBe(400);
+  it('400s on malformed today and bogus groups (missing today defaults to org day)', async () => {
+    const def = await fetch(`${base}/dashboard`, { headers: H(A.access) });
+    expect(def.status).toBe(200);
     expect((await fetch(`${base}/dashboard?today=tomorrow`, { headers: H(A.access) })).status).toBe(400);
     expect((await fetch(`${base}/promises?today=${DAY}&group=bogus`, { headers: H(A.access) })).status).toBe(
       400,

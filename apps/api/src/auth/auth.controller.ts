@@ -1,7 +1,8 @@
-import { Body, Controller, HttpCode, Inject, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
 import { AuthService } from './auth.service.js';
 import { LoginDto, RefreshDto, SignupDto } from './auth.dto.js';
 import { Public } from './public.decorator.js';
+import { Session, type SessionUser } from '../tenant/org.decorator.js';
 
 @Controller('auth')
 export class AuthController {
@@ -33,5 +34,10 @@ export class AuthController {
   @HttpCode(200)
   logout(@Body() body: RefreshDto) {
     return this.service.logout(body.refreshToken);
+  }
+
+  @Get('me')
+  me(@Session() user: SessionUser) {
+    return this.service.me(user.userId);
   }
 }
